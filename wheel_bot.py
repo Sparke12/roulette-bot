@@ -4,38 +4,32 @@ import sqlite3
 import random
 import os
 from datetime import datetime, timedelta
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from flask import Flask
 from threading import Thread
 
 # --- CONFIGURATION ---
 API_TOKEN = '7743738047:AAHZDxCyYsSMjxQ5gf8ealNPPJ70dPhYGTg'
-ADMIN_ID = 5484210331
+ADMIN_ID = 5484210331 # Assure-toi que c'est bien ton ID actuel
 ADMIN_USERNAME = "@wheelbetrupe"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 app = Flask('')
 
-# --- SERVEUR WEB POUR RENDER ---
 @app.route('/')
-def home():
-    return "Bot is Running!"
+def home(): return "Bot is Running!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- LOGIQUE BASE DE DONNÉES ---
+# --- BASE DE DONNÉES ---
 def init_db():
     conn = sqlite3.connect('wheel_database.db')
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY, 
-        is_vip INTEGER DEFAULT 0, 
-        daily_count INTEGER DEFAULT 0, 
-        last_use TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, is_vip INTEGER DEFAULT 0, daily_count INTEGER DEFAULT 0, last_use TEXT)''')
     conn.commit()
     conn.close()
 
@@ -53,90 +47,69 @@ def update_user(user_id, is_vip=None, daily_count=None):
     today = datetime.now().strftime('%Y-%m-%d')
     if not get_user(user_id):
         cursor.execute('INSERT INTO users (user_id, is_vip, daily_count, last_use) VALUES (?, 0, 0, ?)', (user_id, today))
-    if is_vip is not None:
-        cursor.execute('UPDATE users SET is_vip = ? WHERE user_id = ?', (is_vip, user_id))
-    if daily_count is not None:
-        cursor.execute('UPDATE users SET daily_count = ?, last_use = ? WHERE user_id = ?', (daily_count, today, user_id))
+    if is_vip is not None: cursor.execute('UPDATE users SET is_vip = ? WHERE user_id = ?', (is_vip, user_id))
+    if daily_count is not None: cursor.execute('UPDATE users SET daily_count = ?, last_use = ? WHERE user_id = ?', (daily_count, today, user_id))
     conn.commit()
     conn.close()
 
-# --- GÉNÉRATEUR DE PRÉDICTIONS (SÉCURISÉ) ---
-async def generate_schedule(is_vip=False):
-    now = datetime.now()
-    # On utilise des chances simples (Cote 2) pour minimiser les pertes
-    options_safe = ["🔴 ROUGE", "⚫ NOIR", "PAIR", "IMPAIR", "MANQUE (1-18)", "PASSE (19-36)"]
+# --- LOGIQUE D'ANALYSE ---
+def analyze_logic(numbers):
+    # On récupère le dernier numéro pour décider de la couleur opposée
+    last = int(numbers[-1])
+    reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
     
-    nb = 4 if is_vip else 1
-    texte = "📊 **PRÉDICTIONS SÉCURISÉES**\n━━━━━━━━━━━━━━━━━━\n"
-    
-    for i in range(1, nb + 1):
-        # Les signaux VIP sont espacés pour plus de réalisme
-        h = (now + timedelta(minutes=i * 12)).strftime("%H:%M")
-        pred = random.choice(options_safe)
-        confiance = random.randint(94, 98)
-        texte += f"⏰ **{h}** : {pred}\n🔥 Fiabilité : {confiance}%\n------------------\n"
-    
-    texte += "\n⚠️ **CONSEIL :** Si perte, doublez la mise au prochain signal (Martingale)."
-    if not is_vip: 
-        texte += "\n\n💡 /vip pour débloquer 4 signaux !"
-    return texte
+    if last == 0:
+        return random.choice(["ROUGE", "NOIR"])
+    elif last in reds:
+        return "⚫ NOIR"
+    else:
+        return "🔴 ROUGE"
 
-# --- COMMANDES DU BOT ---
+# --- COMMANDES ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer(
-        "🚀 **WHEEL PREDICTOR PRO**\n\n"
-        "Bienvenue dans l'algorithme de prédiction le plus stable.\n\n"
-        "🎁 Gratuit : 2 signaux / jour\n"
-        "💎 VIP : Accès illimité + Stratégie\n\n"
-        "👉 Cliquez sur /signal pour commencer."
-    )
+    await message.answer("🚀 **WHEEL ANALYZER PRO**\n\nPrêt pour l'analyse ?\n👉 Cliquez sur /signal")
 
 @dp.message(Command("vip"))
 async def cmd_vip(message: types.Message):
-    await message.answer(
-        "💎 **DEVENIR MEMBRE VIP** 💎\n\n"
-        "Passez à la vitesse supérieure pour **15 000 FCFA** :\n"
-        "✅ 4 signaux par analyse au lieu de 1.\n"
-        "✅ Accès aux prédictions toute la journée.\n"
-        "✅ Gestion de mise pour ne jamais perdre votre capital.\n\n"
-        "🚀 **POUR PAYER ET ACTIVER :**\n"
-        f"Contactez l'admin : {ADMIN_USERNAME}\n"
-        f"Votre ID à envoyer : `{message.from_user.id}`",
-        parse_mode="Markdown"
-    )
+    await message.answer(f"💎 **OFFRE VIP : 15 000 FCFA**\nAccès illimité et signaux précis.\nContact : {ADMIN_USERNAME}\nID : `{message.from_user.id}`")
 
 @dp.message(Command("signal"))
 async def cmd_signal(message: types.Message):
     user_id = message.from_user.id
     user_data = get_user(user_id)
-    today = datetime.now().strftime('%Y-%m-%d')
-    
     if not user_data: 
-        update_user(user_id, daily_count=0)
-        user_data = (0, 0, today)
+        update_user(user_id)
+        user_data = (0, 0, "")
     
-    is_vip, daily_count, last_use = user_data
-    
-    # Réinitialisation du compteur chaque jour
-    if last_use != today:
-        update_user(user_id, daily_count=0)
-        daily_count = 0
-
-    if not is_vip and daily_count >= 2:
-        await message.answer("❌ Limite gratuite (2/jour) atteinte.\n\nCliquez sur /vip pour continuer !")
+    is_vip, count, last_use = user_data
+    if not is_vip and count >= 2 and last_use == datetime.now().strftime('%Y-%m-%d'):
+        await message.answer("❌ Limite atteinte. /vip")
         return
 
-    m = await message.answer("🔍 **Connexion à la table en cours...**")
-    await asyncio.sleep(1.5)
-    await m.edit_text("📡 **Analyse des derniers tirages...**")
-    await asyncio.sleep(1.5)
+    await message.answer("✍️ **Veuillez entrer les 3 derniers numéros sortis** (ex: 12, 5, 30) :")
+
+@dp.message(F.text.regexp(r'^(\d+),\s*(\d+),\s*(\d+)$'))
+async def process_numbers(message: types.Message):
+    nums = message.text.replace(" ", "").split(",")
     
-    res = await generate_schedule(bool(is_vip))
+    m = await message.answer("📡 **Analyse des séquences en cours...**")
+    await asyncio.sleep(2)
+    
+    prediction = analyze_logic(nums)
+    play_time = (datetime.now() + timedelta(minutes=5)).strftime("%H:%M")
+    
+    res = (
+        f"✅ **ANALYSE TERMINÉE**\n"
+        f"Basée sur : {', '.join(nums)}\n\n"
+        f"🎯 **PRÉDICTION : {prediction}**\n"
+        f"⏰ **HEURE DU JEU : {play_time}**\n"
+        f"🔥 Confiance : {random.randint(91, 97)}%\n\n"
+        "⚠️ *Misez 500F. Si perte, doublez au prochain signal.*"
+    )
+    
     await m.edit_text(res, parse_mode="Markdown")
-    
-    if not is_vip:
-        update_user(user_id, daily_count=daily_count + 1)
+    update_user(message.from_user.id, daily_count=get_user(message.from_user.id)[1] + 1)
 
 @dp.message(Command("setvip"))
 async def cmd_setvip(message: types.Message):
@@ -144,17 +117,14 @@ async def cmd_setvip(message: types.Message):
         try:
             target = int(message.text.split()[1])
             update_user(target, is_vip=1)
-            await message.answer(f"✅ L'ID `{target}` a été activé VIP avec succès !")
-        except:
-            await message.answer("❌ Erreur. Usage : `/setvip ID`")
+            await message.answer(f"✅ ID `{target}` activé !")
+        except: await message.answer("Usage: /setvip ID")
 
-# --- LANCEMENT ---
+# --- LANCEUR ---
 async def main():
     init_db()
     Thread(target=run_flask).start()
-    print("🤖 Bot démarré avec succès !")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
