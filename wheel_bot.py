@@ -11,7 +11,7 @@ from threading import Thread
 
 # --- CONFIGURATION ---
 API_TOKEN = '7743738047:AAHZDxCyYsSMjxQ5gf8ealNPPJ70dPhYGTg'
-ADMIN_ID = 702681 
+ADMIN_ID = 5484210331
 ADMIN_USERNAME = "@wheelbetrupe"
 
 bot = Bot(token=API_TOKEN)
