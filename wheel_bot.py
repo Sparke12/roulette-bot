@@ -105,7 +105,7 @@ async def process_numbers(message: types.Message):
         f"🎯 **PRÉDICTION : {prediction}**\n"
         f"⏰ **HEURE DU JEU : {play_time}**\n"
         f"🔥 Confiance : {random.randint(91, 97)}%\n\n"
-        "⚠️ *Misez 500F. Si perte, doublez au prochain signal.*"
+        "⚠️ *Misez moderez. mais au vip, miser gros sur le signal.*"
     )
     
     await m.edit_text(res, parse_mode="Markdown")
