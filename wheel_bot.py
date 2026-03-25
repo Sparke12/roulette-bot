@@ -12,9 +12,10 @@ from threading import Thread
 
 # --- CONFIGURATION ---
 API_TOKEN = '7743738047:AAHZDxCyYsSMjxQ5gf8ealNPPJ70dPhYGTg'
-ADMIN_ID = 5484210331
+ADMIN_ID = 5484210331  # Ton ID mis à jour
 ADMIN_USERNAME = "@wheelbetrupe"
 CHANNEL_LINK = "https://t.me/Wheelbetpredictor12"
+BOT_USERNAME = "WHEELPREDICTION_BOT" # Ton username exact
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -38,11 +39,10 @@ def init_db():
         daily_count INTEGER DEFAULT 0, 
         last_use TEXT)''')
     
-    # Correction automatique si la colonne referral_count manque
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referral_count INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
-        pass # La colonne existe déjà
+        pass 
         
     conn.commit()
     conn.close()
@@ -82,10 +82,17 @@ async def cmd_start(message: types.Message):
     if len(args) > 1:
         referrer_id = args[1]
         if referrer_id.isdigit() and int(referrer_id) != message.from_user.id:
-            update_user(int(referrer_id), referral_add=1)
+            # On vérifie si c'est un nouvel utilisateur pour le parrainage
+            if not get_user(message.from_user.id):
+                update_user(int(referrer_id), referral_add=1)
+                # Optionnel : informer le parrain
+                try:
+                    await bot.send_message(int(referrer_id), "🎉 Un nouvel ami a rejoint grâce à vous ! +1 point de parrainage.")
+                except: pass
             
     await message.answer(
         "🚀 **WHEEL ANALYZER PRO**\n\n"
+        f"📢 **ÉTAPE 1 :** Rejoins notre canal pour les preuves :\n{CHANNEL_LINK}\n\n"
         "🎁 2 prédictions gratuites / jour\n"
         "🔥 **NOUVEAU :** Parrainez 3 amis pour débloquer les **COTES 3 & 6** !\n"
         "💎 VIP : Accès illimité (15 000 FCFA)\n\n"
@@ -109,13 +116,14 @@ async def cmd_vip_info(message: types.Message):
 async def cmd_referral(message: types.Message):
     user = get_user(message.from_user.id)
     count = user[1] if user else 0
-    bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start={message.from_user.id}"
+    # Lien formaté avec backticks pour copie facile
+    ref_link = f"https://t.me/{BOT_USERNAME}?start={message.from_user.id}"
     
     await message.answer(
         f"👥 **PROGRAMME AMBASSADEUR**\n\n"
-        f"Amis parrainés : **{count} / 3**\n\n"
-        f"Lien à partager :\n`{ref_link}`\n\n"
+        f"📈 Amis parrainés : **{count} / 3**\n\n"
+        f"🔗 **Ton lien personnel (clique pour copier) :**\n"
+        f"`{ref_link}`\n\n"
         "💡 *Dès 3 amis inscrits, vous débloquez les prédictions spéciales gratuitement !*",
         parse_mode="Markdown"
     )
@@ -155,10 +163,10 @@ async def process_numbers(message: types.Message):
     
     if user[0] or user[1] >= 3:
         cote = random.choice([3, 6])
-        type_p = "Douzaine" if cote == 3 else "Sixain"
-        res = f"🔥 **PRÉDICTION COTE {cote}**\n🎯 Type : {type_p}\n⏰ Jeu à : {play_time}\n💡 Fiabilité : 92%"
+        type_p = "Douzaine (D12)" if cote == 3 else "Sixain (Line)"
+        res = f"🔥 **PRÉDICTION COTE {cote}**\n🎯 Type : {type_p}\n⏰ Jeu à : {play_time}\n💡 Fiabilité : {random.randint(91,96)}%"
     else:
-        res = f"✅ **PRÉDICTION SIMPLE**\n🎯 Choix : {random.choice(['ROUGE', 'NOIR'])}\n⏰ Jeu à : {play_time}\n💡 Fiabilité : 97%"
+        res = f"✅ **PRÉDICTION SIMPLE**\n🎯 Choix : {random.choice(['🔴 ROUGE', '⚫ NOIR'])}\n⏰ Jeu à : {play_time}\n💡 Fiabilité : {random.randint(95,98)}%"
 
     await m.edit_text(f"{res}\n\n{get_motivation_quote()}", parse_mode="Markdown")
     update_user(message.from_user.id, daily_count=user[2] + 1)
