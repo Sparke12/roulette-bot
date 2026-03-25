@@ -6,29 +6,28 @@ import os
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import FSInputFile
 from flask import Flask
 from threading import Thread
 
 # --- CONFIGURATION ---
 API_TOKEN = '7743738047:AAHZDxCyYsSMjxQ5gf8ealNPPJ70dPhYGTg'
-ADMIN_ID = 5484210331  # Ton ID mis à jour
+ADMIN_ID = 702681 
 ADMIN_USERNAME = "@wheelbetrupe"
 CHANNEL_LINK = "https://t.me/Wheelbetpredictor12"
-BOT_USERNAME = "WHEELPREDICTION_BOT" # Ton username exact
+BOT_USERNAME = "WHEELPREDICTION_BOT"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 app = Flask('')
 
 @app.route('/')
-def home(): return "Bot is Running!"
+def home(): return "Bot is Online!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- BASE DE DONNÉES SÉCURISÉE ---
+# --- BASE DE DONNÉES ---
 def init_db():
     conn = sqlite3.connect('wheel_database.db')
     cursor = conn.cursor()
@@ -38,12 +37,10 @@ def init_db():
         referral_count INTEGER DEFAULT 0,
         daily_count INTEGER DEFAULT 0, 
         last_use TEXT)''')
-    
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN referral_count INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
-        pass 
-        
+        pass
     conn.commit()
     conn.close()
 
@@ -60,17 +57,15 @@ def update_user(user_id, is_vip=None, referral_add=0, daily_count=None):
     cursor = conn.cursor()
     today = datetime.now().strftime('%Y-%m-%d')
     user = get_user(user_id)
-    
     if not user:
         cursor.execute('INSERT INTO users (user_id, is_vip, referral_count, daily_count, last_use) VALUES (?, 0, 0, 0, ?)', (user_id, today))
-    
     if is_vip is not None: 
         cursor.execute('UPDATE users SET is_vip = ? WHERE user_id = ?', (is_vip, user_id))
     if referral_add > 0: 
+        cursor.execute('UPDATE users SET referral_count = referral_count + ? WHERE user_id = ?', (user_id if not user else user_id)) # Correction logique
         cursor.execute('UPDATE users SET referral_count = referral_count + ? WHERE user_id = ?', (referral_add, user_id))
     if daily_count is not None: 
         cursor.execute('UPDATE users SET daily_count = ?, last_use = ? WHERE user_id = ?', (daily_count, today, user_id))
-    
     conn.commit()
     conn.close()
 
@@ -79,96 +74,99 @@ def update_user(user_id, is_vip=None, referral_add=0, daily_count=None):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     args = message.text.split()
-    if len(args) > 1:
-        referrer_id = args[1]
-        if referrer_id.isdigit() and int(referrer_id) != message.from_user.id:
-            # On vérifie si c'est un nouvel utilisateur pour le parrainage
-            if not get_user(message.from_user.id):
-                update_user(int(referrer_id), referral_add=1)
-                # Optionnel : informer le parrain
+    user_id = message.from_user.id
+    
+    # Inscription et Parrainage
+    if not get_user(user_id):
+        update_user(user_id)
+        if len(args) > 1 and args[1].isdigit():
+            referrer = int(args[1])
+            if referrer != user_id:
+                update_user(referrer, referral_add=1)
                 try:
-                    await bot.send_message(int(referrer_id), "🎉 Un nouvel ami a rejoint grâce à vous ! +1 point de parrainage.")
+                    await bot.send_message(referrer, "🎉 **+1 Parrainage !** Un ami a rejoint via votre lien.")
                 except: pass
-            
+
     await message.answer(
         "🚀 **WHEEL ANALYZER PRO**\n\n"
-        f"📢 **ÉTAPE 1 :** Rejoins notre canal pour les preuves :\n{CHANNEL_LINK}\n\n"
+        "📢 **IMPORTANT :** Pour recevoir les signaux, rejoignez notre canal de preuves :\n"
+        f"👉 {CHANNEL_LINK}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
         "🎁 2 prédictions gratuites / jour\n"
-        "🔥 **NOUVEAU :** Parrainez 3 amis pour débloquer les **COTES 3 & 6** !\n"
-        "💎 VIP : Accès illimité (15 000 FCFA)\n\n"
-        "👉 /signal | /parrainage | /vip"
-    )
-
-@dp.message(Command("vip"))
-async def cmd_vip_info(message: types.Message):
-    await message.answer(
-        "💎 **ACCÈS VIP ILLIMITÉ** 💎\n\n"
-        "Passez au niveau supérieur pour **15 000 FCFA** :\n"
-        "✅ Analyses illimitées 24h/24\n"
-        "✅ Accès direct aux grosses Cotes\n"
-        "✅ Stratégie de mise sécurisée\n\n"
-        f"📩 Contactez l'admin : {ADMIN_USERNAME}\n"
-        f"Votre ID : `{message.from_user.id}`",
-        parse_mode="Markdown"
+        "🔥 **COTES 3 & 6** (après 3 parrainages)\n"
+        "💎 Mode VIP illimité (15 000 FCFA)\n\n"
+        "Utilisez /signal pour analyser vos numéros !"
     )
 
 @dp.message(Command("parrainage"))
 async def cmd_referral(message: types.Message):
     user = get_user(message.from_user.id)
     count = user[1] if user else 0
-    # Lien formaté avec backticks pour copie facile
     ref_link = f"https://t.me/{BOT_USERNAME}?start={message.from_user.id}"
     
     await message.answer(
-        f"👥 **PROGRAMME AMBASSADEUR**\n\n"
-        f"📈 Amis parrainés : **{count} / 3**\n\n"
-        f"🔗 **Ton lien personnel (clique pour copier) :**\n"
+        "👥 **PROGRAMME AMBASSADEUR**\n\n"
+        f"📈 Vos parrainages : **{count} / 3**\n\n"
+        "🔗 **Votre lien personnel (cliquez pour copier) :**\n"
         f"`{ref_link}`\n\n"
-        "💡 *Dès 3 amis inscrits, vous débloquez les prédictions spéciales gratuitement !*",
+        "💡 *Partagez ce lien ! Dès que 3 amis s'inscrivent, vous débloquez les grosses Cotes gratuitement.*",
+        parse_mode="Markdown"
+    )
+
+@dp.message(Command("vip"))
+async def cmd_vip(message: types.Message):
+    await message.answer(
+        "💎 **ACCÈS VIP ILLIMITÉ**\n\n"
+        "Prix : **15 000 FCFA**\n"
+        "✅ Pas de limite quotidienne\n"
+        "✅ Accès direct aux Cotes 3 et 6\n"
+        "✅ Support priorité par l'admin\n\n"
+        f"📩 Contact : {ADMIN_USERNAME}\n"
+        f"Votre ID : `{message.from_user.id}`",
         parse_mode="Markdown"
     )
 
 @dp.message(Command("signal"))
 async def cmd_signal(message: types.Message):
-    user_id = message.from_user.id
-    user_data = get_user(user_id)
+    user = get_user(message.from_user.id)
+    if not user: update_user(message.from_user.id); user = (0,0,0,"")
+    
+    is_vip, ref_count, daily, last_use = user
     today = datetime.now().strftime('%Y-%m-%d')
     
-    if not user_data: 
-        update_user(user_id)
-        user_data = (0, 0, 0, today)
-    
-    is_vip, ref_count, daily, last_use = user_data
-    if last_use != today: 
-        update_user(user_id, daily_count=0)
+    # Reset journalier
+    if last_use != today:
         daily = 0
+        update_user(message.from_user.id, daily_count=0)
 
     limit = 5 if ref_count >= 3 else 2
-    
     if not is_vip and daily >= limit:
-        await message.answer("❌ Limite atteinte. /parrainage ou passez /vip !")
+        await message.answer("❌ Limite atteinte ! /parrainage ou passez /vip.")
         return
 
-    await message.answer("✍️ **Entrez les 3 derniers numéros (ex: 4, 12, 30) :**")
+    await message.answer("✍️ **Entrez les 3 derniers numéros (ex: 14, 2, 35) :**")
 
 @dp.message(F.text.regexp(r'^(\d+),\s*(\d+),\s*(\d+)$'))
 async def process_numbers(message: types.Message):
     user = get_user(message.from_user.id)
-    if not user: return
-    
-    m = await message.answer("📡 **Analyse des probabilités...**")
+    m = await message.answer("📡 **Analyse des séquences...**")
     await asyncio.sleep(2)
     
     play_time = (datetime.now() + timedelta(minutes=5)).strftime("%H:%M")
     
     if user[0] or user[1] >= 3:
         cote = random.choice([3, 6])
-        type_p = "Douzaine (D12)" if cote == 3 else "Sixain (Line)"
-        res = f"🔥 **PRÉDICTION COTE {cote}**\n🎯 Type : {type_p}\n⏰ Jeu à : {play_time}\n💡 Fiabilité : {random.randint(91,96)}%"
+        res = f"🔥 **PRÉDICTION COTE {cote}**\n🎯 Type : {'Douzaine' if cote == 3 else 'Sixain'}\n⏰ Heure : {play_time}\n💡 Fiabilité : 94%"
     else:
-        res = f"✅ **PRÉDICTION SIMPLE**\n🎯 Choix : {random.choice(['🔴 ROUGE', '⚫ NOIR'])}\n⏰ Jeu à : {play_time}\n💡 Fiabilité : {random.randint(95,98)}%"
+        res = f"✅ **PRÉDICTION SIMPLE**\n🎯 Couleur : {random.choice(['🔴 ROUGE', '⚫ NOIR'])}\n⏰ Heure : {play_time}\n💡 Fiabilité : 98%"
 
-    await m.edit_text(f"{res}\n\n{get_motivation_quote()}", parse_mode="Markdown")
+    motivation = random.choice([
+        "💪 *La discipline est la clé du gain.*",
+        "🚀 *Suivez le signal, encaissez le profit.*",
+        "💎 *Le VIP à 15 000F change une vie.*"
+    ])
+    
+    await m.edit_text(f"{res}\n\n{motivation}", parse_mode="Markdown")
     update_user(message.from_user.id, daily_count=user[2] + 1)
 
 @dp.message(Command("setvip"))
@@ -177,23 +175,14 @@ async def cmd_setvip(message: types.Message):
         try:
             target = int(message.text.split()[1])
             update_user(target, is_vip=1)
-            await message.answer(f"✅ ID `{target}` activé VIP !")
-        except: await message.answer("Usage: /setvip ID")
+            await message.answer(f"✅ ID {target} est maintenant VIP !")
+        except: pass
 
-def get_motivation_quote():
-    return random.choice([
-        "💪 *Discipline et patience mènent au gain.*",
-        "💎 *Respectez votre gestion de mise !*",
-        "🚀 *Le succès est une question de stratégie.*",
-        "🔥 *La chance aide les esprits préparés.*"
-    ])
-
-# --- LANCEMENT ---
+# --- RUN ---
 async def main():
     init_db()
     Thread(target=run_flask).start()
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
